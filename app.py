@@ -1,192 +1,170 @@
 """
 RAG Documentation Assistant - Main Application
-Built for the Scholar's Brain project
+Phase 2: Now with persistent storage!
 
-This demonstrates RAG fundamentals: loading documents, creating searchable
-vectors, and querying with Claude while citing sources properly.
-
-Phase 1 Goal: Prove end-to-end pipeline works
-Phase 2: Add persistence so subsequent runs are fast
-Phase 3: Optimize chunking for better retrieval quality
+What changed: ChromaDB now saves vectors to disk. Second run loads 
+in <1 second instead of rebuilding for 45-60 seconds.
 """
 
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, StorageContext
+from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.anthropic import Anthropic
 from dotenv import load_dotenv
+import chromadb
 import os
-import platform
 
-# Load environment variables from .env file
-# This pulls in ANTHROPIC_API_KEY without hardcoding it
 load_dotenv()
 
-# === SYSTEM CHECK ===
-# Always good to know what environment we're running in
-print(f"🖥️  Platform: {platform.system()}")
-print(f"🐍 Python: {platform.python_version()}")
-print("")  # Breathing room in output
-
-# === SECURITY CHECK ===
-# Fail fast if API key is missing - better than cryptic error later
-if not os.getenv("ANTHROPIC_API_KEY"):
-    raise ValueError(
-        "❌ ANTHROPIC_API_KEY not found in .env file\n"
-        "   Create .env and add: ANTHROPIC_API_KEY=sk-ant-your-key-here"
-    )
-
-print("🚀 Starting RAG Documentation Assistant (Scholar's Brain prototype)...")
+print("🚀 Starting RAG Documentation Assistant (Phase 2: Persistent Storage)...")
 print("")
 
-# === CONFIGURE THE STRATEGIC CORTEX (Claude) ===
-# This is your LLM - the piece that generates natural language answers
-print("🤖 Initializing Strategic Cortex (Claude Sonnet 4)...")
-
+# === CONFIGURE STRATEGIC CORTEX (Claude) ===
 strategic_cortex = Anthropic(
     model="claude-sonnet-4-20250514",
     api_key=os.getenv("ANTHROPIC_API_KEY")
 )
 
-# Why Sonnet 4? Balance of quality and cost.
-# Haiku is cheaper but less nuanced for complex queries.
-# Opus is brilliant but expensive for development iteration.
-# Sonnet 4 hits the sweet spot for RAG applications.
-
-# === CONFIGURE THE EMBEDDING MODEL (Local) ===
-# This converts text into vectors - the "semantic fingerprint" of meaning
-print("🔧 Configuring local embedding model (all-MiniLM-L6-v2)...")
-print("   📚 This model creates 384-dimensional vectors from text")
-print("   💰 Runs locally - no API costs")
-print("")
-
+# === CONFIGURE EMBEDDING ENGINE ===
 embedding_engine = HuggingFaceEmbedding(
     model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
-# Why this model?
-# - 384 dimensions is the sweet spot (not too large, not too simple)
-# - Trained on semantic similarity tasks (designed for this exact use case)
-# - Fast inference (< 100ms per document chunk)
-# - Free (no API costs like OpenAI's ada-002)
-# Trade-off: Slightly lower quality than ada-002, but 90% as good for 100% less cost
-
-# === SET GLOBAL DEFAULTS ===
-# LlamaIndex uses these everywhere unless you override
+# Set as global defaults
 Settings.llm = strategic_cortex
 Settings.embed_model = embedding_engine
 
-# === LOAD DOCUMENTS FROM RESEARCH LIBRARY ===
-print("📂 Loading documents from /data (your research library)...")
-
-# SimpleDirectoryReader is smart:
-# - Automatically handles .txt, .md, .pdf, .docx
-# - Preserves metadata (filename, modification date)
-# - Handles encoding issues gracefully
-research_library = SimpleDirectoryReader("data").load_data()
-
-document_count = len(research_library)
-print(f"✅ Loaded {document_count} documents from your research library")
+# === INITIALIZE PERSISTENT CHROMADB ===
+print("🗄️  Initializing ChromaDB with persistent storage...")
+print("   📁 Storage location: ./chroma_db/")
 print("")
 
-# Show what we found (helpful for debugging)
-for idx, doc in enumerate(research_library, start=1):
-    filename = doc.metadata.get('file_name', 'Unknown')
-    char_count = len(doc.text)
-    # Format with thousands separator for readability
-    print(f"  {idx}. {filename} - {char_count:,} characters")
+# PersistentClient saves everything to ./chroma_db folder
+# This folder will contain SQLite database + vector index files
+vector_db = chromadb.PersistentClient(path="./chroma_db")
 
-print("")  # Visual separation before big operation
+# Collections are like tables in a database
+# We'll use one collection called "documents" for all our content
+doc_collection = vector_db.get_or_create_collection("documents")
 
-# === CREATE VECTOR INDEX (The "Scholar's Web" Search Layer) ===
-print("🔍 Creating vector index (semantic search layer)...")
-print("")
-print("   ⏳ FIRST RUN TIMING:")
-print("      • Embedding model download: ~30 seconds (one-time, 90MB)")
-print("      • ChromaDB initialization: ~5 seconds")
-print("      • Vector creation: ~10 seconds (for 2 small docs)")
-print("      • Total: ~45-60 seconds")
-print("")
-print("   ⚡ SUBSEQUENT RUNS (after adding persistence in Phase 2):")
-print("      • Load from disk: <1 second")
-print("")
-print("   🎓 WHAT'S HAPPENING:")
-print("      1. Each document is split into chunks (default: ~1000 chars)")
-print("      2. Each chunk becomes a 384-dimensional vector")
-print("      3. Vectors are stored in ChromaDB for fast similarity search")
-print("      4. When you query, your question also becomes a vector")
-print("      5. ChromaDB finds chunks with similar vectors (semantic search)")
-print("")
+# Wrap ChromaDB in LlamaIndex's vector store interface
+vector_store = ChromaVectorStore(chroma_collection=doc_collection)
 
-# This is where the "magic" happens - but it's just math
-# Similar meanings produce similar vectors (cosine similarity)
-knowledge_base = VectorStoreIndex.from_documents(research_library)
+# StorageContext tells LlamaIndex where to save things
+storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
-print("✅ Vector index created successfully")
-print("   💡 Your documents are now searchable by meaning, not just keywords")
-print("")
+# === CHECK IF INDEX ALREADY EXISTS ===
+# Smart loading: use existing vectors if available, create if not
 
-# === CREATE QUERY ENGINE ===
-# This orchestrates: query → retrieve context → prompt Claude → return answer
-query_engine = knowledge_base.as_query_engine()
+existing_vector_count = len(doc_collection.get()['ids'])
 
-# Under the hood, query_engine does:
-# 1. Convert your question to a vector
-# 2. Find top-k most similar document chunks (default k=2)
-# 3. Construct prompt: "Here are relevant documents: [context]. Answer this: [question]"
-# 4. Send to Claude
-# 5. Return response with source citations
-
-# === TEST QUERY (Prove It Works) ===
-print("❓ Testing with sample query...")
-print("   💰 Cost: ~$0.01 with Claude Sonnet 4")
-print("   ⏱️  Response time: ~2-3 seconds (after index creation)")
-print("")
-
-test_query = "What are these documents about? Summarize the main topics covered."
-
-# This is your first real RAG query - moment of truth!
-answer = query_engine.query(test_query)
-
-print("📄 Claude's Response:")
-print("-" * 60)
-print(answer)
-print("-" * 60)
-print("")
-
-# === SHOW SOURCE CITATIONS ===
-# This is critical - we can trace WHERE the answer came from
-print("📚 Sources Used (with similarity scores):")
-print("")
-
-for rank, source_node in enumerate(answer.source_nodes, start=1):
-    source_file = source_node.metadata.get('file_name', 'Unknown')
-    similarity_score = source_node.score
+if existing_vector_count > 0:
+    # FAST PATH: Load from disk
+    print(f"✅ Found existing index with {existing_vector_count} vectors")
+    print("   ⚡ Loading from disk (fast path)...")
+    print("")
     
-    print(f"  {rank}. {source_file}")
-    print(f"     Similarity: {similarity_score:.3f} (higher = more relevant)")
+    knowledge_base = VectorStoreIndex.from_vector_store(
+        vector_store,
+        storage_context=storage_context
+    )
     
-    # Show a preview of what was retrieved
-    chunk_preview = source_node.text[:150].replace('\n', ' ')
-    print(f"     Preview: {chunk_preview}...")
+    print("✅ Index loaded in <1 second!")
+    print("   💡 This is why persistence matters")
+    print("")
+    
+else:
+    # SLOW PATH: Create from scratch (first run only)
+    print("📂 No existing index found. Creating from documents...")
+    print("   ⏳ This will take 45-60 seconds (one-time initialization)")
+    print("")
+    
+    # Load documents
+    research_library = SimpleDirectoryReader("data").load_data()
+    doc_count = len(research_library)
+    print(f"✅ Loaded {doc_count} documents")
+    
+    # Show what we're indexing
+    for idx, doc in enumerate(research_library, start=1):
+        filename = doc.metadata.get('file_name', 'Unknown')
+        char_count = len(doc.text)
+        print(f"  {idx}. {filename} - {char_count:,} characters")
+    
+    print("")
+    print("🔍 Creating vector index...")
+    print("   🎓 Process: Document → Chunks → Embeddings → ChromaDB → Disk")
+    print("")
+    
+    # This creates vectors AND saves them to disk
+    knowledge_base = VectorStoreIndex.from_documents(
+        research_library,
+        storage_context=storage_context,
+        show_progress=True  # Shows progress bar
+    )
+    
+    final_vector_count = len(doc_collection.get()['ids'])
+    print("")
+    print(f"✅ Index created and saved to ChromaDB")
+    print(f"   📊 Total vectors: {final_vector_count}")
+    print(f"   💾 Disk usage: ~{final_vector_count * 4}KB (4KB per vector average)")
     print("")
 
-# === COMPLETION STATUS ===
-print("=" * 60)
-print("✅ Phase 1 Complete!")
+# === CREATE QUERY ENGINE ===
+query_engine = knowledge_base.as_query_engine()
+
+# === INTERACTIVE QUERY LOOP ===
+# Now you can ask multiple questions without rebuilding the index
+
+print("=" * 70)
+print("🎯 RAG SYSTEM READY - Interactive Query Mode")
 print("")
-print("What you just built:")
-print("  • Document loading from /data folder")
-print("  • Semantic vector search (meaning-based, not keywords)")
-print("  • Claude API integration with proper context")
-print("  • Source citation (traceable answers)")
+print("Ask questions about your documents. Type 'exit', 'quit', or 'q' to stop.")
 print("")
-print("Next Steps:")
-print("  • Phase 2: Add persistence (subsequent runs in <1 second)")
-print("  • Phase 3: Optimize chunking for better retrieval")
-print("  • Phase 4: Build interactive UI (Gradio)")
+print("💡 Tips:")
+print("   • Ask specific questions for better answers")
+print("   • Reference concepts from your documents")
+print("   • Each query costs ~$0.01 with Claude Sonnet 4")
 print("")
-print("💡 Cost Breakdown:")
-print("   • This query: ~$0.01")
-print("   • Embeddings: $0.00 (local model)")
-print("   • Total project cost (100 queries): ~$1.00")
-print("=" * 60)
+print("=" * 70)
+
+while True:
+    # Get user input
+    user_question = input("\n❓ Your question: ")
+    
+    # Exit conditions
+    if user_question.lower().strip() in ['exit', 'quit', 'q', '']:
+        print("\n👋 Ending session. Your index is saved for next time!")
+        print(f"   📁 Vector database: ./chroma_db/ ({existing_vector_count} vectors)")
+        break
+    
+    # Skip empty questions
+    if not user_question.strip():
+        continue
+    
+    # Query the system
+    print("\n🤔 Searching your research library...")
+    
+    try:
+        answer = query_engine.query(user_question)
+        
+        # Show answer
+        print("\n📄 Answer:")
+        print("-" * 70)
+        print(answer)
+        print("-" * 70)
+        
+        # Show sources
+        print("\n📚 Sources:")
+        for rank, source_node in enumerate(answer.source_nodes, start=1):
+            source_file = source_node.metadata.get('file_name', 'Unknown')
+            similarity = source_node.score
+            
+            print(f"\n  {rank}. {source_file} (similarity: {similarity:.3f})")
+            
+            # Show relevant chunk preview
+            chunk_preview = source_node.text[:200].replace('\n', ' ')
+            print(f"     Context: {chunk_preview}...")
+    
+    except Exception as e:
+        print(f"\n❌ Error processing query: {e}")
+        print("   Try rephrasing your question or check your API key.")
