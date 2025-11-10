@@ -1,12 +1,24 @@
-# Core RAG framework - handles document loading, chunking, indexing
-llama-index-llms-anthropic      # Claude API integration for LlamaIndex
-llama-index-embeddings-huggingface  # Local embedding model support
-llama-index-vector-stores-chroma    # ChromaDB integration
+# Core LlamaIndex - requires Pydantic V2
+llama-index-core>=0.12.0
 
-# Vector database - PINNED because 0.6+ breaks with LlamaIndex
-chromadb==0.5.3
+# LLM Integration - requires anthropic>=0.52.0
+llama-index-llms-anthropic
+
+# Embeddings
+llama-index-embeddings-huggingface
+
+# Vector Store
+llama-index-vector-stores-chroma
+
+# Pydantic - constrained to avoid schema generation errors
+pydantic>=2.7.0,<2.10.0
+
+# ChromaDB - latest version works with Pydantic 2
+chromadb>=0.5.0
 
 # Utilities
-python-dotenv                   # Load environment variables from .env
-sentence-transformers           # The actual embedding model
-pydantic<2.0                   # ChromaDB requires Pydantic v1
+python-dotenv
+sentence-transformers
+
+# Unified llama-index (includes core + common integrations)
+llama-index
