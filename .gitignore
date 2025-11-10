@@ -1,0 +1,17 @@
+# Python environment and packages
+.venv/
+__pycache__/
+*.pyc
+*.egg-info
+
+# Secrets
+.env
+
+# OS-specific
+.DS_Store
+
+# Project-specific
+chroma_db/
+
+# DO commit .python-version - it ensures environment consistency
+# (removed from ignore list)
