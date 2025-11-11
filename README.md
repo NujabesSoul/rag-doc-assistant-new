@@ -2,7 +2,7 @@
 
 > Production-ready Retrieval-Augmented Generation system built with Claude API. Part of the Scholar's Brain project - demonstrating AI Implementation Engineering skills for Solutions Engineer roles.
 
-**Built by CK** | November 2025 | [GitHub](https://github.com/yourusername/rag-doc-assistant-new) | [LinkedIn](https://linkedin.com/in/yourprofile)
+**Built by CK** | November 2025 | [GitHub](https://github.com/NujabesSoul/rag-doc-assistant-new) | [LinkedIn](https://www.linkedin.com/in/erick-allas-1781786b/)
 
 ---
 
@@ -314,25 +314,6 @@ source $HOME/.cargo/env
 cat .python-version  # Should show 3.11.9
 uv python pin 3.11.9
 ```
-
----
-
-## Interview Talking Points
-
-**Technical depth:**
-> "I implemented a RAG system using Claude API and local embeddings, achieving 93% cost reduction vs OpenAI. I tested three chunking strategies (256/512/1024 characters) and documented the trade-offs. With my test corpus, optimizations showed marginal gains, but I preserved the implementation for production deployment at 500+ documents where precision matters."
-
-**Problem-solving:**
-> "I hit version compatibility issues between the Anthropic SDK and LlamaIndex. Rather than forcing old versions, I researched current best practices, discovered LlamaIndex had migrated to Pydantic V2, updated my stack, and documented the solution for others."
-
-**Production thinking:**
-> "I documented that 45-60 second first-run latency is expected behavior, not a bug. Implementation Engineers must distinguish architecture reality from defects. This prevents 'is it broken?' conversations with clients."
-
----
-
-## License
-
-MIT
 
 ---
 
